@@ -8,6 +8,7 @@ import com.api_estacionamento.service.utils.ValidaHorarioUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -31,79 +32,82 @@ class GarageControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        // Força a garagem a estar aberta
         ReflectionTestUtils.setField(controller, "garagemAberta", true);
     }
 
     @Test
     void deveAbrirEFecharGaragem() {
-        // Primeiro toggle abre
         ReflectionTestUtils.setField(controller, "garagemAberta", false);
-        String resposta1 = controller.alternarGaragem();
-        assertEquals("Garagem aberta.", resposta1);
+        String aberta = controller.alternarGaragem();
+        assertEquals("Garagem aberta.", aberta);
 
-        // Segundo toggle fecha
-        String resposta2 = controller.alternarGaragem();
+        String fechada = controller.alternarGaragem();
         verify(garageService).liberarTodasAsVagas();
-        assertEquals("Garagem fechada e todas as vagas foram liberadas.", resposta2);
+        assertEquals("Garagem fechada e todas as vagas foram liberadas.", fechada);
     }
 
     @Test
-    void deveRecusarEntradaQuandoGaragemFechada() {
+    void deveRecusarEntradaComGaragemFechada() {
         ReflectionTestUtils.setField(controller, "garagemAberta", false);
-
-        String resposta = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-        assertEquals("Garagem está fechada.", resposta);
+        ResponseEntity<String> resp = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals(400, resp.getStatusCodeValue());
+        assertEquals("Garagem está fechada.", resp.getBody());
     }
 
     @Test
-    void deveRecusarEntradaForaDoHorarioPermitido() {
+    void deveRecusarEntradaForaDoHorario() {
         when(validaHorarioUtils.permitidoEntradaAgora()).thenReturn(false);
-
-        String resposta = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-        assertEquals("A entrada não é permitida fora do horário autorizado pelas regras administrativas.", resposta);
+        ResponseEntity<String> resp = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals(400, resp.getStatusCodeValue());
+        assertEquals("A entrada não é permitida fora do horário autorizado pelas regras administrativas.", resp.getBody());
     }
 
     @Test
-    void devePermitirEntradaQuandoHorarioValido() {
+    void deveTratarErroEmEntradaComMensagem500() {
         when(validaHorarioUtils.permitidoEntradaAgora()).thenReturn(true);
-        when(garageService.entradaVeiculo(anyLong(), any(), any())).thenReturn("Entrada registrada com sucesso.");
+        when(garageService.entradaVeiculo(anyLong(), any(), any()))
+                .thenThrow(new RuntimeException("Não existe uma vaga disponivel"));
 
-        String resposta = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-        assertEquals("Entrada registrada com sucesso.", resposta);
+        ResponseEntity<String> resp = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals(500, resp.getStatusCodeValue());
+        assertEquals("Não existe uma vaga disponivel", resp.getBody());
     }
 
     @Test
-    void deveRecusarSaidaQuandoGaragemFechada() {
-        ReflectionTestUtils.setField(controller, "garagemAberta", false);
+    void devePermitirEntradaValida() {
+        when(validaHorarioUtils.permitidoEntradaAgora()).thenReturn(true);
+        when(garageService.entradaVeiculo(anyLong(), any(), any()))
+                .thenReturn("Entrada registrada com sucesso.");
+        ResponseEntity<String> resp = controller.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals(200, resp.getStatusCodeValue());
+        assertEquals("Entrada registrada com sucesso.", resp.getBody());
+    }
 
+    @Test
+    void deveRecusarSaidaComGaragemFechada() {
+        ReflectionTestUtils.setField(controller, "garagemAberta", false);
         String resposta = controller.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
         assertEquals("Garagem está fechada.", resposta);
     }
 
     @Test
-    void devePermitirSaidaQuandoGaragemAberta() {
+    void devePermitirSaida() {
         when(garageService.saidaVeiculo(anyLong(), any(), any())).thenReturn("Saída registrada com sucesso.");
-
         String resposta = controller.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
         assertEquals("Saída registrada com sucesso.", resposta);
     }
 
     @Test
-    void deveConsultarStatusVaga() {
+    void deveConsultarVaga() {
         when(garageService.verificaVagaEmUso(1L)).thenReturn("Status da vaga: LIVRE");
-
-        String resposta = controller.consultaVaga(1L);
-        assertEquals("Status da vaga: LIVRE", resposta);
+        assertEquals("Status da vaga: LIVRE", controller.consultaVaga(1L));
     }
 
     @Test
-    void deveListarTodasAsVagas() {
-        Vaga vaga1 = new Vaga();
-        Vaga vaga2 = new Vaga();
-        when(garageService.listarTodas()).thenReturn(List.of(vaga1, vaga2));
-
-        List<Vaga> lista = controller.listarTodas();
-        assertEquals(2, lista.size());
+    void deveListarTodasVagas() {
+        Vaga v1 = new Vaga(), v2 = new Vaga();
+        when(garageService.listarTodas()).thenReturn(List.of(v1, v2));
+        List<Vaga> vagas = controller.listarTodas();
+        assertEquals(2, vagas.size());
     }
 }

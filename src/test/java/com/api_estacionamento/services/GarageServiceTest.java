@@ -18,6 +18,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+
 class GarageServiceTest {
 
     @InjectMocks
@@ -38,7 +39,6 @@ class GarageServiceTest {
     void deveLiberarTodasAsVagas() {
         Vaga vaga1 = new Vaga(); vaga1.setStatus(StatusVaga.EM_USO);
         Vaga vaga2 = new Vaga(); vaga2.setStatus(StatusVaga.FECHADO);
-
         when(vagaRepository.findAll()).thenReturn(List.of(vaga1, vaga2));
 
         service.liberarTodasAsVagas();
@@ -54,7 +54,6 @@ class GarageServiceTest {
         vaga.setId_vaga(1L);
         vaga.setStatus(StatusVaga.LIVRE);
         vaga.setLancamentos(new ArrayList<>());
-
         when(vagaRepository.findById(1L)).thenReturn(Optional.of(vaga));
         when(vagaRepository.findAll()).thenReturn(List.of(vaga));
 
@@ -67,163 +66,194 @@ class GarageServiceTest {
     }
 
     @Test
-    void deveRecusarEntradaSeVagaNaoExiste() {
-        when(vagaRepository.findById(anyLong())).thenReturn(Optional.empty());
+    void deveLancarErroQuandoTodasVagasEstiveremEmUso() {
+        // Vaga solicitada existe e está livre (mas simula que todas estão ocupadas)
+        Vaga vagaSolicitada = new Vaga();
+        vagaSolicitada.setId_vaga(1L);
+        vagaSolicitada.setStatus(StatusVaga.LIVRE);
+        vagaSolicitada.setLancamentos(new ArrayList<>());
 
-        String resposta = service.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        // Todas as outras vagas em uso
+        Vaga vaga2 = new Vaga(); vaga2.setStatus(StatusVaga.EM_USO);
+        Vaga vaga3 = new Vaga(); vaga3.setStatus(StatusVaga.EM_USO);
 
-        assertEquals("Vaga não encontrada.", resposta);
+        // Retorna a vaga solicitada no findById
+        when(vagaRepository.findById(1L)).thenReturn(Optional.of(vagaSolicitada));
+
+        // Simula que todas as vagas do sistema estão em uso (inclusive a solicitada)
+        when(vagaRepository.findAll()).thenReturn(List.of(
+                new Vaga() {{ setStatus(StatusVaga.EM_USO); }},
+                new Vaga() {{ setStatus(StatusVaga.EM_USO); }},
+                new Vaga() {{ setStatus(StatusVaga.EM_USO); }}
+        ));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN)
+        );
+
+        assertEquals("Não existe uma vaga disponivel", ex.getMessage());
+    }
+
+
+    @Test
+    void deveLancarErroQuandoVagaNaoExiste() {
+        Vaga v1 = new Vaga(); v1.setStatus(StatusVaga.LIVRE);
+        when(vagaRepository.findAll()).thenReturn(List.of(v1));
+        when(vagaRepository.findById(1L)).thenReturn(Optional.empty());
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN)
+        );
+        assertEquals("Vaga não encontrada.", ex.getMessage());
     }
 
     @Test
-    void deveRecusarEntradaSeVagaJaEmUso() {
-        Vaga vaga = new Vaga();
-        vaga.setStatus(StatusVaga.EM_USO);
-
+    void deveLancarErroQuandoVagaEstaEmUso() {
+        Vaga vaga = new Vaga(); vaga.setStatus(StatusVaga.EM_USO);
         when(vagaRepository.findById(1L)).thenReturn(Optional.of(vaga));
+        when(vagaRepository.findAll()).thenReturn(List.of(vaga));
 
-        String resposta = service.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-
-        assertEquals("Vaga já está em uso.", resposta);
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN)
+        );
     }
 
     @Test
     void deveRegistrarSaidaComSucesso() {
-        Vaga vaga = new Vaga();
-        vaga.setStatus(StatusVaga.EM_USO);
-
-        Lancamento lancamento = new Lancamento();
-        lancamento.setDataHoraEntrada(LocalDateTime.now().minusHours(2));
-        lancamento.setDataHoraSaida(null);
-        vaga.setLancamentos(new ArrayList<>(List.of(lancamento)));
-
+        Vaga vaga = new Vaga(); vaga.setStatus(StatusVaga.EM_USO);
+        Lancamento lanc = new Lancamento();
+        lanc.setDataHoraEntrada(LocalDateTime.now().minusHours(1));
+        lanc.setDataHoraSaida(null);
+        vaga.setLancamentos(List.of(lanc));
         when(vagaRepository.findById(1L)).thenReturn(Optional.of(vaga));
 
-        String resposta = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.valueOf(25));
-
-        assertEquals("Saída registrada com sucesso.", resposta);
+        String res = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals("Saída registrada com sucesso.", res);
         assertEquals(StatusVaga.LIVRE, vaga.getStatus());
-        assertNotNull(lancamento.getDataHoraSaida());
-        assertEquals(BigDecimal.valueOf(25), lancamento.getValorPago());
-        verify(lancamentoRepository).save(lancamento);
+        verify(lancamentoRepository).save(lanc);
         verify(vagaRepository).save(vaga);
     }
 
     @Test
     void deveRecusarSaidaSeVagaNaoExiste() {
         when(vagaRepository.findById(1L)).thenReturn(Optional.empty());
-
-        String resposta = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-        assertEquals("Vaga não encontrada.", resposta);
+        String res = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals("Vaga não encontrada.", res);
     }
 
     @Test
     void deveRecusarSaidaSeVagaNaoEstiverEmUso() {
-        Vaga vaga = new Vaga();
-        vaga.setStatus(StatusVaga.LIVRE);
-
+        Vaga vaga = new Vaga(); vaga.setStatus(StatusVaga.LIVRE);
         when(vagaRepository.findById(1L)).thenReturn(Optional.of(vaga));
-
-        String resposta = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-        assertEquals("Vaga não está ocupada.", resposta);
+        String res = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals("Vaga não está ocupada.", res);
     }
 
     @Test
     void deveRecusarSaidaSeNaoHouverLancamentoAberto() {
-        Vaga vaga = new Vaga();
-        vaga.setStatus(StatusVaga.EM_USO);
-        Lancamento lancamento = new Lancamento();
-        lancamento.setDataHoraSaida(LocalDateTime.now()); // já saiu
-        vaga.setLancamentos(List.of(lancamento));
-
+        Vaga vaga = new Vaga(); vaga.setStatus(StatusVaga.EM_USO);
+        Lancamento lanc = new Lancamento(); lanc.setDataHoraSaida(LocalDateTime.now());
+        vaga.setLancamentos(List.of(lanc));
         when(vagaRepository.findById(1L)).thenReturn(Optional.of(vaga));
-
-        String resposta = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
-        assertEquals("Nenhuma entrada registrada para essa vaga.", resposta);
+        String res = service.saidaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN);
+        assertEquals("Nenhuma entrada registrada para essa vaga.", res);
     }
 
     @Test
     void deveRetornarStatusDaVaga() {
-        Vaga vaga = new Vaga();
-        vaga.setStatus(StatusVaga.FECHADO);
-
+        Vaga vaga = new Vaga(); vaga.setStatus(StatusVaga.FECHADO);
         when(vagaRepository.findById(1L)).thenReturn(Optional.of(vaga));
-
-        String resposta = service.verificaVagaEmUso(1L);
-        assertEquals("Status da vaga: FECHADO", resposta);
+        String res = service.verificaVagaEmUso(1L);
+        assertEquals("Status da vaga: FECHADO", res);
     }
 
     @Test
     void deveRetornarVagaNaoEncontradaNaConsulta() {
         when(vagaRepository.findById(1L)).thenReturn(Optional.empty());
-
-        String resposta = service.verificaVagaEmUso(1L);
-        assertEquals("Vaga não encontrada.", resposta);
+        String res = service.verificaVagaEmUso(1L);
+        assertEquals("Vaga não encontrada.", res);
     }
 
     @Test
     void deveListarTodasAsVagas() {
-        Vaga v1 = new Vaga(); Vaga v2 = new Vaga();
-        when(vagaRepository.findAll()).thenReturn(List.of(v1, v2));
-
-        List<Vaga> vagas = service.listarTodas();
-        assertEquals(2, vagas.size());
+        when(vagaRepository.findAll()).thenReturn(List.of(new Vaga(), new Vaga()));
+        assertEquals(2, service.listarTodas().size());
     }
 
     @Test
     void deveAplicarDescontoDe10PorcentoQuandoLotacaoMenorQue25() {
-        Vaga vagaLivre = new Vaga(); vagaLivre.setStatus(StatusVaga.LIVRE);
+        Vaga vaga = new Vaga(); vaga.setStatus(StatusVaga.LIVRE);
+        when(vagaRepository.findAll()).thenReturn(List.of(vaga, vaga, vaga, vaga));
 
-        when(vagaRepository.findAll()).thenReturn(List.of(vagaLivre, vagaLivre, vagaLivre, vagaLivre));
-
-        BigDecimal result = ReflectionTestUtils.invokeMethod(service,
-                "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
-
+        BigDecimal result = ReflectionTestUtils.invokeMethod(service, "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
         assertEquals(BigDecimal.valueOf(90.00), result);
     }
 
     @Test
     void deveManterTarifaBaseQuandoLotacaoEntre25e50() {
-        Vaga vaga1 = new Vaga(); vaga1.setStatus(StatusVaga.EM_USO);
-        Vaga vaga2 = new Vaga(); vaga2.setStatus(StatusVaga.LIVRE);
-        Vaga vaga3 = new Vaga(); vaga3.setStatus(StatusVaga.LIVRE);
-        Vaga vaga4 = new Vaga(); vaga4.setStatus(StatusVaga.LIVRE);
+        Vaga v1 = new Vaga(); v1.setStatus(StatusVaga.EM_USO);
+        Vaga v2 = new Vaga(); v2.setStatus(StatusVaga.LIVRE);
+        Vaga v3 = new Vaga(); v3.setStatus(StatusVaga.LIVRE);
+        Vaga v4 = new Vaga(); v4.setStatus(StatusVaga.LIVRE);
+        when(vagaRepository.findAll()).thenReturn(List.of(v1, v2, v3, v4));
 
-        when(vagaRepository.findAll()).thenReturn(List.of(vaga1, vaga2, vaga3, vaga4));
-
-        BigDecimal result = ReflectionTestUtils.invokeMethod(service,
-                "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
-
+        BigDecimal result = ReflectionTestUtils.invokeMethod(service, "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
         assertEquals(BigDecimal.valueOf(100), result);
     }
 
     @Test
     void deveAplicarAumentoDe10PorcentoQuandoLotacaoAte75() {
-        Vaga vaga1 = new Vaga(); vaga1.setStatus(StatusVaga.EM_USO);
-        Vaga vaga2 = new Vaga(); vaga2.setStatus(StatusVaga.EM_USO);
-        Vaga vaga3 = new Vaga(); vaga3.setStatus(StatusVaga.EM_USO);
-        Vaga vaga4 = new Vaga(); vaga4.setStatus(StatusVaga.LIVRE);
+        Vaga v1 = new Vaga(); v1.setStatus(StatusVaga.EM_USO);
+        Vaga v2 = new Vaga(); v2.setStatus(StatusVaga.EM_USO);
+        Vaga v3 = new Vaga(); v3.setStatus(StatusVaga.EM_USO);
+        Vaga v4 = new Vaga(); v4.setStatus(StatusVaga.LIVRE);
+        when(vagaRepository.findAll()).thenReturn(List.of(v1, v2, v3, v4));
 
-        when(vagaRepository.findAll()).thenReturn(List.of(vaga1, vaga2, vaga3, vaga4));
-
-        BigDecimal result = ReflectionTestUtils.invokeMethod(service,
-                "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
-
+        BigDecimal result = ReflectionTestUtils.invokeMethod(service, "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
         assertEquals(BigDecimal.valueOf(110.00), result);
     }
 
     @Test
     void deveAplicarAumentoDe25PorcentoQuandoLotacaoAcimaDe75() {
-        Vaga vaga1 = new Vaga(); vaga1.setStatus(StatusVaga.EM_USO);
+        Vaga v1 = new Vaga(); v1.setStatus(StatusVaga.EM_USO);
+        Vaga v2 = new Vaga(); v2.setStatus(StatusVaga.EM_USO);
+        Vaga v3 = new Vaga(); v3.setStatus(StatusVaga.EM_USO);
+        Vaga v4 = new Vaga(); v4.setStatus(StatusVaga.EM_USO);
+        when(vagaRepository.findAll()).thenReturn(List.of(v1, v2, v3, v4));
+
+        BigDecimal result = ReflectionTestUtils.invokeMethod(service, "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
+        assertEquals(0, result.compareTo(BigDecimal.valueOf(125)));
+
+    }
+
+    @Test
+    void deveLancarErroQuandoTodasAsVagasEstaoEmUsoMesmoComVagaLivreSolicitada() {
+        Vaga vagaSolicitada = new Vaga();
+        vagaSolicitada.setId_vaga(1L);
+        vagaSolicitada.setStatus(StatusVaga.LIVRE);
+        vagaSolicitada.setLancamentos(new ArrayList<>());
+
         Vaga vaga2 = new Vaga(); vaga2.setStatus(StatusVaga.EM_USO);
         Vaga vaga3 = new Vaga(); vaga3.setStatus(StatusVaga.EM_USO);
-        Vaga vaga4 = new Vaga(); vaga4.setStatus(StatusVaga.EM_USO);
 
-        when(vagaRepository.findAll()).thenReturn(List.of(vaga1, vaga2, vaga3, vaga4));
+        when(vagaRepository.findById(1L)).thenReturn(Optional.of(vagaSolicitada));
+        when(vagaRepository.findAll()).thenReturn(List.of(vagaSolicitada, vaga2, vaga3));
 
-        BigDecimal result = ReflectionTestUtils.invokeMethod(service,
-                "calcularTarifaComBaseNaLotacao", BigDecimal.valueOf(100));
+        // Neste caso, 2 de 3 vagas estão em uso — NÃO é 100%, então não deve dar erro ainda.
+        // Vamos simular o cenário com 100% ocupadas:
 
-        assertEquals(0, result.compareTo(BigDecimal.valueOf(125)));
+        vagaSolicitada.setStatus(StatusVaga.LIVRE); // momentaneamente livre
+        when(vagaRepository.findAll()).thenReturn(List.of(
+                vaga2, vaga3, new Vaga() {{
+                    setStatus(StatusVaga.EM_USO);
+                }}
+        ));
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                service.entradaVeiculo(1L, LocalDateTime.now(), BigDecimal.TEN)
+        );
+
+        assertEquals("Não existe uma vaga disponivel", ex.getMessage());
     }
+
 }

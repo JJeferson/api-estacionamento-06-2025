@@ -74,9 +74,23 @@ curl -X POST http://localhost:8080/garage \
 ![imagem](imgs/patch.png)
 
 Os GETS são bastante intuitivos.
-Um lista tudo o outro só uma vaga.
+Um lista todas as vagas o outro só uma vaga.
+
+Aqui tem um SQL especifico que vc pode usar no MySQL-Workbench para testar a parte da validação do estacionamento cheio:
+<pre>
+USE estacionamento;
+
+UPDATE vaga
+SET status = 'EM_USO'
+where 1=1;
+</pre>
+
+Talvez vc precise desabilitar o "somente updates seguros". [/br]
+Pra isso vc pode ir em Edit/Preferences - reinicie a sessão.
+
 
 ### TESTES
+Basta rodar o msn clean install e ele rodará.
 ![imagem](imgs/testes.png)
 
 O Jacoco, relatório de cobertura:

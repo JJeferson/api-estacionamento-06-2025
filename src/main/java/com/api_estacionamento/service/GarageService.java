@@ -1,6 +1,5 @@
 package com.api_estacionamento.service;
 
-
 import com.api_estacionamento.model.Lancamento;
 import com.api_estacionamento.model.Vaga;
 import com.api_estacionamento.model.utils.StatusVaga;
@@ -33,12 +32,26 @@ public class GarageService {
     }
 
     public String entradaVeiculo(Long idVaga, LocalDateTime entrada, BigDecimal tarifaBase) {
+        // 1. Verifica se TODAS estão ocupadas
+        List<Vaga> vagas = vagaRepository.findAll();
+        boolean todasEmUso = vagas.stream().allMatch(v -> v.getStatus() == StatusVaga.EM_USO);
+        if (todasEmUso) {
+            throw new RuntimeException("Não existe uma vaga disponivel");
+        }
+
+        // 2. Agora verifica se a vaga existe
         Optional<Vaga> optionalVaga = vagaRepository.findById(idVaga);
-        if (optionalVaga.isEmpty()) return "Vaga não encontrada.";
+        if (optionalVaga.isEmpty()) {
+            throw new RuntimeException("Vaga não encontrada.");
+        }
 
+        // 3. Verifica se a vaga específica está em uso
         Vaga vaga = optionalVaga.get();
-        if (vaga.getStatus() == StatusVaga.EM_USO) return "Vaga já está em uso.";
+        if (vaga.getStatus() == StatusVaga.EM_USO) {
+            throw new RuntimeException("Essa vaga esta em uso");
+        }
 
+        // 4. Tudo OK, segue o fluxo
         BigDecimal tarifaFinal = calcularTarifaComBaseNaLotacao(tarifaBase);
 
         Lancamento lancamento = new Lancamento();
@@ -56,6 +69,8 @@ public class GarageService {
         return "Entrada registrada com sucesso. Tarifa aplicada: R$ " + tarifaFinal;
     }
 
+
+
     public String saidaVeiculo(Long idVaga, LocalDateTime saida, BigDecimal valorPago) {
         Optional<Vaga> optionalVaga = vagaRepository.findById(idVaga);
         if (optionalVaga.isEmpty()) return "Vaga não encontrada.";
@@ -63,7 +78,6 @@ public class GarageService {
         Vaga vaga = optionalVaga.get();
         if (vaga.getStatus() != StatusVaga.EM_USO) return "Vaga não está ocupada.";
 
-        // Pega último lançamento ativo
         Lancamento ultimoLancamento = vaga.getLancamentos().stream()
                 .filter(l -> l.getDataHoraSaida() == null)
                 .reduce((first, second) -> second).orElse(null);
@@ -103,14 +117,13 @@ public class GarageService {
         double lotacao = (double) emUso / todas.size();
 
         if (lotacao < 0.25) {
-            return tarifaBase.multiply(BigDecimal.valueOf(0.90)); // 10% desconto
+            return tarifaBase.multiply(BigDecimal.valueOf(0.90));
         } else if (lotacao <= 0.50) {
-            return tarifaBase; // Sem alteração
+            return tarifaBase;
         } else if (lotacao <= 0.75) {
-            return tarifaBase.multiply(BigDecimal.valueOf(1.10)); // 10% acréscimo
+            return tarifaBase.multiply(BigDecimal.valueOf(1.10));
         } else {
-            return tarifaBase.multiply(BigDecimal.valueOf(1.25)); // 25% acréscimo
+            return tarifaBase.multiply(BigDecimal.valueOf(1.25));
         }
     }
-
 }
